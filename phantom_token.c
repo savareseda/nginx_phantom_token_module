@@ -99,6 +99,9 @@ static char* set_client_credential_configuration_slot(ngx_conf_t *config_setting
 static const char BEARER[] = "Bearer ";
 static const size_t BEARER_SIZE = sizeof(BEARER) - 1;
 
+static const char TOKEN_INACTIVE[] = "{\"active\":false}";
+static const size_t TOKEN_INACTIVE_SIZE = sizeof(TOKEN_INACTIVE);
+
 static ngx_command_t phantom_token_module_directives[] =
 {
     {
@@ -256,6 +259,17 @@ static ngx_int_t handler(ngx_http_request_t *request)
             // return appropriate status
             if (module_context->status == NGX_HTTP_OK)
             {
+                u_char *inactive_pos;
+                inactive_pos = ngx_strcasestrn((u_char*)module_context->jwt.data, (char*)TOKEN_INACTIVE, TOKEN_INACTIVE_SIZE - 1);
+
+                // return unauthorized when introspection response is HTTP Status = 200 but response body is {"active":false}
+                if(inactive_pos != NULL){
+                    ngx_log_debug0(NGX_LOG_DEBUG_HTTP, request->connection->log, 0, "Token active: false");
+
+                    return set_www_authenticate_header(request, module_location_config->realm,
+                                                       module_location_config->space_separated_scopes, NULL);
+                }
+
                 // Introspection was successful. Replace the incoming Authorization header with one that has the JWT.
                 request->headers_in.authorization->value.len = module_context->jwt.len;
                 request->headers_in.authorization->value.data = module_context->jwt.data;
